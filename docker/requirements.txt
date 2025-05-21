@@ -79,3 +79,6 @@ torch==2.0.1
 torchvision
 xformers
 lightning
+
+# for imap
+einops

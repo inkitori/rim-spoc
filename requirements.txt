@@ -79,3 +79,6 @@ torchvision
 xformers
 lightning
 open-clip-torch
+
+# for imap
+einops
