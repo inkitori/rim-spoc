@@ -20,7 +20,10 @@ from architecture.models.transformer_models.text_cond_visual_encoder import (
     TextCondMultiCameraVisualEncoderWDoubleDet,
     NonTxMultiCameraVisualEncoder,
 )
-from architecture.models.transformer_models.imap_embedding import ImapEmbedding
+from architecture.models.transformer_models.imap_embedding import (
+	ImapEmbedding,
+	ImapEmbeddingConfig,
+)
 from training.offline.train_utils import load_pl_ckpt
 from utils.constants.stretch_initialization_utils import ALL_STRETCH_ACTIONS
 from utils.nn_utils import create_causal_mask, sample_action_index_from_logits
@@ -34,6 +37,7 @@ EarlyFusionCnnTransformerPreprocessor = Preprocessor
 class EarlyFusionCnnTransformerConfig:
     visual_encoder: TextCondVisualEncoderConfig = TextCondVisualEncoderConfig()
     visual_text_encoder_class: str = "TextCondMultiCameraVisualEncoder"
+    imap_embedding: ImapEmbeddingConfig = ImapEmbeddingConfig()
     encoder: TransformerConfig = TransformerConfig(3, 512, 8)
     num_actions: int = len(ALL_STRETCH_ACTIONS)
     max_length: int = 1000
@@ -89,7 +93,7 @@ class EarlyFusionCnnTransformer(nn.Module):
             self.object_in_hand_embed = nn.Embedding(3, self.cfg.encoder.d_model)
             self.object_in_hand_embed.weight.data.uniform_(-0.01, 0.01)
     
-        self.imap_embedding = ImapEmbedding() # fill this in
+        self.imap_embedding = ImapEmbedding(self.cfg.imap_embedding)
         # (B, imap_size^2, hidden_size), need to set hidden_size to 512
 
     

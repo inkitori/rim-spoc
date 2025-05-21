@@ -1,10 +1,17 @@
 import torch
 import torch.nn as nn
 import einops
+from dataclasses import dataclass
+
+@dataclass 
+class ImapEmbeddingConfig:
+	imap_size: int = 3
+	hidden_size: int = 512
+	dropout_rate: float = 0.1
 
 # https://github.com/cshizhe/onav_rim/blob/main/offline_bc/models/onav_imap_models.py
 class ImapEmbedding(nn.Module):
-    def __init__(self, model_config) -> None: # model_config contains imap_size, hidden_size
+    def __init__(self, model_config: ImapEmbeddingConfig) -> None: # model_config contains imap_size, hidden_size
         super().__init__()
         self.imap_size = model_config.imap_size
         # imap consists of imap_size x imap_size embeddings of size hidden_size
