@@ -33,7 +33,7 @@ EarlyFusionCnnTransformerPreprocessor = Preprocessor
 class EarlyFusionCnnTransformerConfig:
     visual_encoder: TextCondVisualEncoderConfig = TextCondVisualEncoderConfig()
     visual_text_encoder_class: str = "TextCondMultiCameraVisualEncoder"
-    decoder: TransformerConfig = TransformerConfig(3, 512, 8)
+    encoder: TransformerConfig = TransformerConfig(3, 512, 8)
     num_actions: int = len(ALL_STRETCH_ACTIONS)
     max_length: int = 1000
     action_loss: bool = True
@@ -64,14 +64,14 @@ class EarlyFusionCnnTransformer(nn.Module):
         self.visual_encoder = _VIS_TEXT_ENCODER_NAME_TO_CLASS[self.cfg.visual_text_encoder_class](
             self.cfg.visual_encoder
         )
-        self.decoder = nn.TransformerDecoder(
-            nn.TransformerDecoderLayer(
-                d_model=self.cfg.decoder.d_model, nhead=self.cfg.decoder.nhead, batch_first=True
+        self.encoder = nn.TransformerEncoder(
+            nn.TransformerEncoderLayer(
+                d_model=self.cfg.encoder.d_model, nhead=self.cfg.encoder.nhead, batch_first=True
             ),
-            num_layers=self.cfg.decoder.num_layers,
+            num_layers=self.cfg.encoder.num_layers,
         )
-        self.action_classifier = nn.Linear(self.cfg.decoder.d_model, self.cfg.num_actions)
-        self.time_encoder = PositionalEncoder(self.cfg.decoder.d_model, self.cfg.max_length)
+        self.action_classifier = nn.Linear(self.cfg.encoder.d_model, self.cfg.num_actions)
+        self.time_encoder = PositionalEncoder(self.cfg.encoder.d_model, self.cfg.max_length)
         self.ce_loss = nn.CrossEntropyLoss(ignore_index=-1)
 
         self.input_sensors = self.cfg.visual_encoder.input_sensors
@@ -79,13 +79,13 @@ class EarlyFusionCnnTransformer(nn.Module):
             # if num_actions=20; then 0-19 are actions, 20 is for "" (start token), and 21 is for padding
             self.last_actions_embed = nn.Embedding(
                 self.cfg.num_actions + 2,
-                self.cfg.decoder.d_model,
+                self.cfg.encoder.d_model,
                 padding_idx=self.cfg.num_actions + 1,
             )
             self.last_actions_embed.weight.data.uniform_(-0.01, 0.01)
 
         if "an_object_is_in_hand" in self.input_sensors:
-            self.object_in_hand_embed = nn.Embedding(3, self.cfg.decoder.d_model)
+            self.object_in_hand_embed = nn.Embedding(3, self.cfg.encoder.d_model)
             self.object_in_hand_embed.weight.data.uniform_(-0.01, 0.01)
 
     def mock_batch(self):
@@ -132,16 +132,13 @@ class EarlyFusionCnnTransformer(nn.Module):
 
         return visual_feats, text_feats
 
-    def decode_and_get_logits(self, embedded_features, text_feats, padding_mask=None):
-        causal_mask = create_causal_mask(embedded_features.shape[1], embedded_features.device)
-        decoder_output = self.decoder(
-            tgt=embedded_features,
-            memory=text_feats,
-            tgt_mask=causal_mask,
-            tgt_key_padding_mask=padding_mask,
+    def decode_and_get_logits(self, embedded_features, implicit_memory, padding_mask=None):
+        encoder_output = self.encoder(
+            src=torch.cat((implicit_memory, embedded_features), dim=1),
+            src_key_padding_mask=padding_mask,
         )
-        logits = dict(actions_logits=self.action_classifier(decoder_output))
-        return logits
+        logits = dict(actions_logits=self.action_classifier(encoder_output))
+        return logits, encoder_output
 
     def forward(self, batch):
         goals = batch["goals"]
@@ -153,14 +150,32 @@ class EarlyFusionCnnTransformer(nn.Module):
             key: obs for (key, obs) in batch.items() if is_a_non_visual_sensor(key)
         }
 
-        embedded_features, text_feats = self.get_input_embedding_per_timestep(
+        embedded_features = self.get_input_embedding_per_timestep(
             visual_sensors,
             non_visual_sensors,
             goals,
             time_ids,
         )
 
-        logits = self.decode_and_get_logits(embedded_features, text_feats, padding_mask)
+        logits = None
+        # figure out how to instantiate this
+        implicit_memory = None
+
+        for t in range(embedded_features.shape[1]):
+            logits, last_hidden_state = self.decode_and_get_logits(
+                embedded_features=embedded_features[:, t : t + 1, :],
+                implicit_memory=implicit_memory, 
+                padding_mask=padding_mask,
+            )
+
+            implicit_memory = last_hidden_state[:, : -1, :]
+
+            if logits is not None:
+                logits["actions_logits"] = torch.cat(
+                    (logits["actions_logits"], logits["actions_logits"]), dim=1
+                )
+            else:
+                logits = dict(actions_logits=logits["actions_logits"])
 
         outputs = dict(**logits)
         if self.cfg.action_loss:
