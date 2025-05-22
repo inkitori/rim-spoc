@@ -258,7 +258,7 @@ class Preprocessor:
             ]:
                 output[sensor] = self.process_task_relevant_bbox(batch, sensor)
             else:
-                if sensor not in ["initial_agent_location", "templated_task_type"]:
+                if sensor not in ["initial_agent_location", "last_agent_pose", "templated_task_type"]:
                     raise NotImplementedError(f"Sensor {sensor} not implemented")
 
         if "actions" in batch_keys:

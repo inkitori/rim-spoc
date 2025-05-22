@@ -93,8 +93,8 @@ class EarlyFusionCnnTransformer(nn.Module):
             self.object_in_hand_embed = nn.Embedding(3, self.cfg.encoder.d_model)
             self.object_in_hand_embed.weight.data.uniform_(-0.01, 0.01)
     
+        # (B, imap_size^2, 512)
         self.imap_embedding = ImapEmbedding(self.cfg.imap_embedding)
-        # (B, imap_size^2, hidden_size), need to set hidden_size to 512
 
     
 
@@ -174,7 +174,7 @@ class EarlyFusionCnnTransformer(nn.Module):
 
         batch_size = embedded_features.shape[0]
         
-        # dont think we need memory_pos because nn.Transformer already has positional encoding
+        # don't think we need memory_pos because nn.Transformer already has positional encoding
         implicit_memory, implicit_memory_pos, implicit_memory_mask = self.imap_embedding(batch_size)
 
         for t in range(embedded_features.shape[1]):
@@ -185,7 +185,7 @@ class EarlyFusionCnnTransformer(nn.Module):
             )
 
             implicit_memory = last_hidden_state[:, : -1, :]
-
+            
             if logits is not None:
                 logits["actions_logits"] = torch.cat(
                     (logits["actions_logits"], logits["actions_logits"]), dim=1
