@@ -163,7 +163,7 @@ class EarlyFusionCnnTransformer(nn.Module):
             key: obs for (key, obs) in batch.items() if is_a_non_visual_sensor(key)
         }
 
-        embedded_features = self.get_input_embedding_per_timestep(
+        embedded_features, _ = self.get_input_embedding_per_timestep(
             visual_sensors,
             non_visual_sensors,
             goals,
@@ -178,20 +178,19 @@ class EarlyFusionCnnTransformer(nn.Module):
         implicit_memory, implicit_memory_pos, implicit_memory_mask = self.imap_embedding(batch_size)
 
         for t in range(embedded_features.shape[1]):
-            logits, last_hidden_state = self.decode_and_get_logits(
+            t_logits, last_hidden_state = self.decode_and_get_logits(
                 embedded_features=embedded_features[:, t : t + 1, :],
                 implicit_memory=implicit_memory, 
                 padding_mask=torch.cat([implicit_memory_mask, padding_mask[:, t : t + 1]], dim=1),
             )
-
             implicit_memory = last_hidden_state[:, : -1, :]
             
             if logits is not None:
                 logits["actions_logits"] = torch.cat(
-                    (logits["actions_logits"], logits["actions_logits"]), dim=1
+                        (logits["actions_logits"], t_logits["actions_logits"][:, -1:, :]), dim=1
                 )
             else:
-                logits = dict(actions_logits=logits["actions_logits"])
+                logits = dict(actions_logits=t_logits["actions_logits"][:, -1:, :])
 
         outputs = dict(**logits)
         if self.cfg.action_loss:
