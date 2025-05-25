@@ -115,7 +115,7 @@ class ChoresDataReader:
                         pose_3d[:,0], 
                         pose_3d[:,2], 
                         np.sin(pose_3d[:,4]), 
-                        np.cos(pose_3d[:.4])
+                        np.cos(pose_3d[:,4])
                     ]) 
                 elif k == "last_action_str":
                     sensors[k] = [convert_byte_to_string(row, None) for row in grp[k]]
