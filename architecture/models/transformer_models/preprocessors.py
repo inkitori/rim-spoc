@@ -11,6 +11,8 @@ from torch.nn.utils.rnn import pad_sequence
 from torchvision.transforms import Compose, Normalize
 from transformers import AutoTokenizer
 
+import numpy as np
+
 from utils.constants.stretch_initialization_utils import ALL_STRETCH_ACTIONS
 from utils.sensor_constant_utils import is_a_visual_sensor
 from utils.transformation_util import get_full_transformation_list, sample_a_specific_transform
@@ -185,6 +187,18 @@ class Preprocessor:
             return pad_sequence(time_ids, batch_first=True, padding_value=-1).to(self.device)
 
         return time_ids
+    
+    def process_agent_pose(self, batch):
+        agent_pose = [
+            torch.tensor(sample["last_agent_pose"][: self.cfg.max_steps]).long()
+            for sample in batch
+        ]
+        if self.cfg.pad:
+            return pad_sequence(agent_pose, batch_first=True, padding_value=-1).to(
+                self.device
+            )
+        return agent_pose
+
 
     def process_objinhand(self, batch):
         obj_in_hand = [
@@ -232,6 +246,8 @@ class Preprocessor:
         for sensor in batch_keys:
             if is_a_visual_sensor(sensor):
                 output[sensor] = self.process_frames(batch, sensor_key=sensor)
+            elif sensor == "last_agent_pose":
+                output[sensor] = self.process_agent_pose(batch)
             elif sensor == "an_object_is_in_hand":
                 output[sensor] = self.process_objinhand(batch)
             elif sensor == "relative_arm_location_metadata":
@@ -258,7 +274,7 @@ class Preprocessor:
             ]:
                 output[sensor] = self.process_task_relevant_bbox(batch, sensor)
             else:
-                if sensor not in ["initial_agent_location", "last_agent_pose", "templated_task_type"]:
+                if sensor not in ["initial_agent_location", "templated_task_type"]:
                     raise NotImplementedError(f"Sensor {sensor} not implemented")
 
         if "actions" in batch_keys:
@@ -274,6 +290,17 @@ class Preprocessor:
             output["padding_mask"] = self.create_padding_mask(
                 output["lengths"], output[key_to_look_at].shape[1]
             )
+        
+        # 
+
+        # inferred pose and rgb vals for visual feature prediction
+        max_future_step_size = 20
+        infer_time_ids = np.array([
+            np.random.randint(0, min(self.cfg.max_steps, t+max_future_step_size)) \
+                for t in range(0, self.cfg.max_steps)
+        ])
+        output['infer_pose'] = output['last_agent_pose'][infer_time_ids]
+        output['infer_visual_features'] = output['raw_navigation_camera'][infer_time_ids]
 
         return output
 

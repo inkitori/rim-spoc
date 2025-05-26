@@ -42,6 +42,7 @@ class EarlyFusionCnnTransformerConfig:
     num_actions: int = len(ALL_STRETCH_ACTIONS)
     max_length: int = 1000
     action_loss: bool = True
+    dropout_rate: int = 0.1
 
 
 class EarlyFusionCnnTransformer(nn.Module):
@@ -75,7 +76,6 @@ class EarlyFusionCnnTransformer(nn.Module):
             ),
             num_layers=self.cfg.encoder.num_layers,
         )
-        self.action_classifier = nn.Linear(self.cfg.encoder.d_model, self.cfg.num_actions)
         self.time_encoder = PositionalEncoder(self.cfg.encoder.d_model, self.cfg.max_length)
         self.ce_loss = nn.CrossEntropyLoss(ignore_index=-1)
 
@@ -96,7 +96,20 @@ class EarlyFusionCnnTransformer(nn.Module):
         # (B, imap_size^2, 512)
         self.imap_embedding = ImapEmbedding(self.cfg.imap_embedding)
 
-    
+        self.pose_embedding = nn.Sequential(
+            nn.Linear(4, 512),
+            nn.LayerNorm(512),
+        )
+
+        self.vis_pred_layer = nn.Sequential(
+            nn.Dropout(self.cfg.dropout_rate),
+            nn.Linear(512, 384), 
+        )
+
+        self.action_distribution = nn.Sequential(
+            nn.Dropout(self.cfg.dropout_rate),
+            nn.Linear(self.output_size, self.cfg.num_actions),
+        )
 
     def mock_batch(self):
         B, T, C, H, W = 2, 10, 3, 224, 384
@@ -121,6 +134,7 @@ class EarlyFusionCnnTransformer(nn.Module):
         non_visual_sensors,
         goals,
         time_ids, # (B, T)
+        last_agent_pose,
         text_features=None,
     ):
         # visual_feats: (B, T, 512)
@@ -128,6 +142,8 @@ class EarlyFusionCnnTransformer(nn.Module):
         visual_feats, text_feats = self.visual_encoder(
             visual_sensors, goals, text_features, non_visual_sensors
         )
+
+        visual_feats = visual_feats + self.pose_embedding(last_agent_pose)
 
         # last_actions_enc: (B, T, 512)
         if "last_actions" in non_visual_sensors:
@@ -145,13 +161,24 @@ class EarlyFusionCnnTransformer(nn.Module):
 
         return visual_feats, text_feats
 
-    def decode_and_get_logits(self, embedded_features, implicit_memory, padding_mask=None):
+
+    def decode_and_get_logits(self, embedded_features, implicit_memory, pose_pred, padding_mask=None):
+        ntokens = implicit_memory.size(1) + 2
+        attn_masks = torch.zeros(ntokens, ntokens).bool().to(implicit_memory.device)
+        attn_masks[:-1, -1] = True  # imap and obs tokens should not see the masked token
+        attn_masks[-1, -2] = True   # the masked token should not see the current observation
+        
         encoder_output = self.encoder(
-            src=torch.cat((implicit_memory, embedded_features), dim=1),
+            src=torch.cat((implicit_memory, embedded_features, pose_pred), dim=1),
             src_key_padding_mask=padding_mask,
+            attn_mask = attn_masks,
         )
-        logits = dict(actions_logits=self.action_classifier(encoder_output))
-        return logits, encoder_output
+        
+        imap_embeds = encoder_output[:, :-2] # B, imap_size**2, 512
+        action_pred = self.action_distribution(self.encoder_output[:, -2]) # B, num_actions
+        vis_pred = self.vis_pred_layer(encoder_output[:, -1]) # B, num_rgb_values
+        
+        return imap_embeds, action_pred, vis_pred
 
     def forward(self, batch):
         goals = batch["goals"]
@@ -168,8 +195,12 @@ class EarlyFusionCnnTransformer(nn.Module):
             non_visual_sensors,
             goals,
             time_ids,
+            batch["last_agent_pose"]
         )
 
+        pose_pred = self.pose_embedding(batch["infer_pose"]) # B, T, 512
+        
+        vis_pred_losses = []
         logits = None
 
         batch_size = embedded_features.shape[0]
@@ -178,26 +209,56 @@ class EarlyFusionCnnTransformer(nn.Module):
         implicit_memory, implicit_memory_pos, implicit_memory_mask = self.imap_embedding(batch_size)
 
         for t in range(embedded_features.shape[1]):
-            logits, last_hidden_state = self.decode_and_get_logits(
+            imap_embeds, action_pred, vis_pred = self.decode_and_get_logits(
                 embedded_features=embedded_features[:, t : t + 1, :],
                 implicit_memory=implicit_memory, 
+                pose_pred = pose_pred[:, t : t + 1, :],
                 padding_mask=torch.cat([implicit_memory_mask, padding_mask[:, t : t + 1]], dim=1),
             )
 
-            implicit_memory = last_hidden_state[:, : -1, :]
-            
+            implicit_memory = imap_embeds
+
             if logits is not None:
                 logits["actions_logits"] = torch.cat(
-                    (logits["actions_logits"], logits["actions_logits"]), dim=1
+                    (logits["actions_logits"], action_pred), dim=1
                 )
             else:
                 logits = dict(actions_logits=logits["actions_logits"])
+
+            
+            target_visual_features = batch['infer_visual_features'] # target_visual_features[:, t] is the correct rgb values corresponding to pose_pred[:, t : t + 1, :]
+            seq_visual_features = batch['raw_navigation_camera'] 
+            seq_visual_features = F.normalize(seq_visual_features, p=2, dim=-1) # rgb values for every time step
+
+            # calculate visual feature prediction loss
+            vis_pred = F.normalize(vis_pred, p=2, dim=-1)
+        
+            pos_sim_scores = torch.einsum(
+                'bd,bd->b', F.normalize(target_visual_features[:, t], p=2, dim=-1), 
+                vis_pred
+            ) # (B,), similarity score between vis_pred and target_visual_features
+            neg_sim_scores = torch.einsum(
+                'btd,bd->bt', seq_visual_features, vis_pred
+            ) # (B,T), similarity score between vis_pred and each previously seen frame
+            sim_scores = torch.cat([pos_sim_scores.unsqueeze(1), neg_sim_scores], 1)  
+            sim_scores = sim_scores / 0.1
+            vis_pred_losses.append(F.cross_entropy(
+                sim_scores, 
+                torch.zeros(sim_scores.size(0), dtype=torch.long, device=sim_scores.device),
+                reduction='none'
+            ))
 
         outputs = dict(**logits)
         if self.cfg.action_loss:
             action_loss = self.compute_loss(logits["actions_logits"], batch["actions"])
             outputs["actions_loss"] = action_loss
             outputs["loss"] = action_loss
+
+        vis_pred_losses = torch.stack(vis_pred_losses, 1)
+        vis_pred_loss = torch.mean(vis_pred_losses)
+
+        outputs['loss'] = outputs['loss'] + vis_pred_loss * self.model_config.infer_visual_feature_loss
+        outputs['vis_pred_loss'] = vis_pred_loss
 
         return outputs
 
@@ -413,7 +474,7 @@ class EarlyFusionCnnTransformerAgent(AbstractAgent):
             visual_sensors=frames_dict,
             non_visual_sensors=preprocessed_nonvisual_sensors,
         )
-
+    
     def get_action(self, observations, goal_spec):
         processed_observations = self.process_sensors_for_model_eval(observations)
 
