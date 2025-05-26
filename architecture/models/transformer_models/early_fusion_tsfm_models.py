@@ -223,7 +223,7 @@ class EarlyFusionCnnTransformer(nn.Module):
                     (logits["actions_logits"], action_pred), dim=1
                 )
             else:
-                logits = dict(actions_logits=logits["actions_logits"])
+                logits = dict(actions_logits=action_pred)
 
             
             target_visual_features = batch['infer_visual_features'] # target_visual_features[:, t] is the correct rgb values corresponding to pose_pred[:, t : t + 1, :]
