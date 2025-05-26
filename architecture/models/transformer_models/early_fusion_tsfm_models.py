@@ -190,7 +190,7 @@ class EarlyFusionCnnTransformer(nn.Module):
             key: obs for (key, obs) in batch.items() if is_a_non_visual_sensor(key)
         }
 
-        embedded_features = self.get_input_embedding_per_timestep(
+        embedded_features, _ = self.get_input_embedding_per_timestep(
             visual_sensors,
             non_visual_sensors,
             goals,
