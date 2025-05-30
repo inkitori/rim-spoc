@@ -205,15 +205,15 @@ class EarlyFusionCnnTransformer(nn.Module):
         implicit_memory, implicit_memory_pos = self.imap_embedding(batch_size)
 
         for t in range(T):
-            actions_logits_t, implicit_memory = self.decode_and_get_logits(
+            logits, implicit_memory = self.decode_and_get_logits(
                 embedded_features=embedded_features[:, t : t + 1, :],
                 implicit_memory=implicit_memory, 
                 padding_mask=padding_mask[:, t : t + 1],
             )
 
-            actions_logits = torch.cat((actions_logits, actions_logits_t), dim=1)
+            actions_logits = torch.cat((actions_logits, logits['actions_logits']), dim=1)
 
-		logits = dict(actions_logits=actions_logits)
+        logits = dict(actions_logits=actions_logits)
         outputs = dict(**logits)
 
         if self.cfg.action_loss:
