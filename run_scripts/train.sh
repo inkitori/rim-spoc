@@ -26,6 +26,8 @@ fi
 
 cd /gscratch/ark/anjo0/rim-spoc
 
+git checkout primary_task
+
 conda activate spoc
 
-python -m training.offline.train_pl --dataset_version RoomVisit --wandb_project_name dl_project --wandb_entity_name 493_spoc_rim --data_dir data/datasets/fifteen --input_sensors raw_navigation_camera raw_manipulation_camera last_actions an_object_is_in_hand --precision 16-mixed --lr 0.00002 --model_version siglip_3 --per_gpu_batch 16 --output_dir data/results --model EarlyFusionCnnTransformer --num_nodes 1 
+python -m training.offline.train_pl --dataset_version PickupType --wandb_project_name dl_project --wandb_entity_name 493_spoc_rim --data_dir data/datasets/fifteen --input_sensors raw_navigation_camera raw_manipulation_camera last_actions an_object_is_in_hand --precision 16-mixed --lr 0.00002 --model_version siglip_3 --per_gpu_batch 16 --output_dir data/results --model EarlyFusionCnnTransformer --num_nodes 1 
