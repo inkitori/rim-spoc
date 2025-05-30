@@ -100,3 +100,4 @@ utils/beaker
 .torch_cache
 data
 train.out
+eval.out
