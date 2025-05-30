@@ -59,6 +59,4 @@ class ImapEmbedding(nn.Module):
         embeds = einops.repeat(embeds, 'n d -> b n d', b=batch_size) 
         pos_embeds = einops.repeat(pos_embeds, 'n d -> b n d', b=batch_size)
 
-        padding_mask = torch.zeros((batch_size, self.imap_size**2), dtype=torch.bool).to(device)
-
-        return embeds, pos_embeds, padding_mask
+        return embeds, pos_embeds

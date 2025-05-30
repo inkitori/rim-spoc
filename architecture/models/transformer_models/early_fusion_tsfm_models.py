@@ -146,12 +146,39 @@ class EarlyFusionCnnTransformer(nn.Module):
         return visual_feats, text_feats
 
     def decode_and_get_logits(self, embedded_features, implicit_memory, padding_mask=None):
+        batch_size = embedded_features.shape[0]
+        memory_size = implicit_memory.shape[1]
+
+        implicit_memory_mask = torch.zeros(
+            (batch_size, memory_size),
+            dtype=torch.bool,
+            device=embedded_features.device,
+        )
+
+        if padding_mask is None:
+            padding_mask = torch.cat((
+                implicit_memory_mask,
+                torch.zeros(
+                    (batch_size, 1),
+                    dtype=torch.bool,
+                    device=embedded_features.device,
+                ),
+            ), dim=1)
+        else:
+            padding_mask = torch.cat((
+                implicit_memory_mask,
+                padding_mask,
+            ), dim=1)
+
         encoder_output = self.encoder(
             src=torch.cat((implicit_memory, embedded_features), dim=1),
             src_key_padding_mask=padding_mask,
         )
+
         logits = dict(actions_logits=self.action_classifier(encoder_output))
-        return logits, encoder_output
+        next_memory = encoder_output[:, :-1, :]  # exclude the last token
+
+        return logits, next_memory
 
     def forward(self, batch):
         goals = batch["goals"]
@@ -175,13 +202,13 @@ class EarlyFusionCnnTransformer(nn.Module):
         batch_size = embedded_features.shape[0]
         
         # don't think we need memory_pos because nn.Transformer already has positional encoding
-        implicit_memory, implicit_memory_pos, implicit_memory_mask = self.imap_embedding(batch_size)
+        implicit_memory, implicit_memory_pos = self.imap_embedding(batch_size)
 
         for t in range(embedded_features.shape[1]):
             t_logits, last_hidden_state = self.decode_and_get_logits(
                 embedded_features=embedded_features[:, t : t + 1, :],
                 implicit_memory=implicit_memory, 
-                padding_mask=torch.cat([implicit_memory_mask, padding_mask[:, t : t + 1]], dim=1),
+                padding_mask=padding_mask[:, t : t + 1],
             )
             implicit_memory = last_hidden_state[:, : -1, :]
             
@@ -449,12 +476,18 @@ class EarlyFusionCnnTransformerAgent(AbstractAgent):
             self.cache["embedded_features"] = torch.cat(
                 (self.cache["embedded_features"], embedded_features), dim=1
             )
+        
+        if self.curr_t == 0:
+            self.cache['implicit_memory'], _ = self.model.imap_embedding(embedded_features.shape[0])
 
         decoder_input = self.cache["embedded_features"]
         if self.curr_t >= self.max_seq_len:
             decoder_input = decoder_input[:, -self.max_seq_len :]
 
-        logits = self.model.decode_and_get_logits(decoder_input, text_feats)
+        logits, self.cache['implicit_memory'] = self.model.decode_and_get_logits(
+            embedded_features=decoder_input[:, -1 :, :], 
+            implicit_memory=self.cache['implicit_memory'], 
+        )
 
         curr_logits = logits["actions_logits"][0, -1]
         action_idx = sample_action_index_from_logits(
