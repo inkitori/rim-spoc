@@ -1,0 +1,7 @@
+CONDA_BASE detected as: /gscratch/ark/anjo0/miniconda3
+Sourced /gscratch/ark/anjo0/miniconda3/etc/profile.d/conda.sh
+error: Your local changes to the following files would be overwritten by checkout:
+	run_scripts/eval.sh
+Please commit your changes or stash them before you switch branches.
+Aborting
+slurmstepd: error: *** JOB 26565722 ON g3110 CANCELLED AT 2025-05-30T10:05:43 ***

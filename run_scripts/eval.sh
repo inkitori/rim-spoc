@@ -7,7 +7,7 @@
 #SBATCH --gres=gpu:1
 #SBATCH --time=23:59:00
 #SBATCH --job-name=eval
-#SBATCH --output=/gscratch/ark/anjo0/rim-spoc/run_scripts/eval.out
+#SBATCH --output=/gscratch/ark/anjo0/rim-spoc/run_scripts/logs/%x_%j.out
 
 CONDA_BASE=$(conda info --base) # This is a good way to get it if conda is in PATH
 
