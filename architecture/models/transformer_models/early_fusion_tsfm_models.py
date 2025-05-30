@@ -175,7 +175,7 @@ class EarlyFusionCnnTransformer(nn.Module):
             src_key_padding_mask=padding_mask,
         )
 
-        logits = dict(actions_logits=self.action_classifier(encoder_output))
+        logits = dict(actions_logits=self.action_classifier(encoder_output[:, -1:, :])) # (B, 1, num_actions)
         next_memory = encoder_output[:, :-1, :]  # exclude the last token
 
         return logits, next_memory
@@ -197,29 +197,25 @@ class EarlyFusionCnnTransformer(nn.Module):
             time_ids,
         )
 
-        logits = None
+        batch_size, T, _ = embedded_features.shape
 
-        batch_size = embedded_features.shape[0]
+        actions_logits = torch.empty((batch_size, 0, self.cfg.num_actions), device=embedded_features.device)
         
         # don't think we need memory_pos because nn.Transformer already has positional encoding
         implicit_memory, implicit_memory_pos = self.imap_embedding(batch_size)
 
-        for t in range(embedded_features.shape[1]):
-            t_logits, last_hidden_state = self.decode_and_get_logits(
+        for t in range(T):
+            actions_logits_t, implicit_memory = self.decode_and_get_logits(
                 embedded_features=embedded_features[:, t : t + 1, :],
                 implicit_memory=implicit_memory, 
                 padding_mask=padding_mask[:, t : t + 1],
             )
-            implicit_memory = last_hidden_state[:, : -1, :]
-            
-            if logits is not None:
-                logits["actions_logits"] = torch.cat(
-                        (logits["actions_logits"], t_logits["actions_logits"][:, -1:, :]), dim=1
-                )
-            else:
-                logits = dict(actions_logits=t_logits["actions_logits"][:, -1:, :])
 
+            actions_logits = torch.cat((actions_logits, actions_logits_t), dim=1)
+
+		logits = dict(actions_logits=actions_logits)
         outputs = dict(**logits)
+
         if self.cfg.action_loss:
             action_loss = self.compute_loss(logits["actions_logits"], batch["actions"])
             outputs["actions_loss"] = action_loss
