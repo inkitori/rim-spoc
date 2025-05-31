@@ -96,7 +96,10 @@ class EarlyFusionCnnTransformer(nn.Module):
         # (B, imap_size^2, 512)
         self.imap_embedding = ImapEmbedding(self.cfg.imap_embedding)
 
-    
+        self.pose_embedding = nn.Sequential(
+            nn.Linear(4, 512),
+            nn.LayerNorm(512),
+        )
 
     def mock_batch(self):
         B, T, C, H, W = 2, 10, 3, 224, 384
@@ -121,6 +124,7 @@ class EarlyFusionCnnTransformer(nn.Module):
         non_visual_sensors,
         goals,
         time_ids, # (B, T)
+        last_agent_pose,
         text_features=None,
     ):
         # visual_feats: (B, T, 512)
@@ -142,6 +146,8 @@ class EarlyFusionCnnTransformer(nn.Module):
 
         time_enc = self.time_encoder(time_ids)
         visual_feats = visual_feats + time_enc
+
+        visual_feats = visual_feats + self.pose_embedding(last_agent_pose)
 
         return visual_feats, text_feats
 
@@ -173,6 +179,7 @@ class EarlyFusionCnnTransformer(nn.Module):
         encoder_output = self.encoder(
             src=torch.cat((implicit_memory, embedded_features), dim=1),
             src_key_padding_mask=padding_mask,
+            
         )
 
         logits = dict(actions_logits=self.action_classifier(encoder_output[:, -1:, :])) # (B, 1, num_actions)
@@ -195,13 +202,13 @@ class EarlyFusionCnnTransformer(nn.Module):
             non_visual_sensors,
             goals,
             time_ids,
+            batch["last_agent_pose"],
         )
 
         batch_size, T, _ = embedded_features.shape
 
         actions_logits = torch.empty((batch_size, 0, self.cfg.num_actions), device=embedded_features.device)
         
-        # don't think we need memory_pos because nn.Transformer already has positional encoding
         implicit_memory, implicit_memory_pos = self.imap_embedding(batch_size)
 
         for t in range(T):
