@@ -96,8 +96,8 @@ class EarlyFusionCnnTransformer(nn.Module):
         # (B, imap_size^2, 512)
         self.imap_embedding = ImapEmbedding(self.cfg.imap_embedding)
 
-        self.pose_embedding = nn.Sequential(
-            nn.Linear(4, 512),
+        self.pos_embedding = nn.Sequential(
+            nn.Linear(2, 512),
             nn.LayerNorm(512),
         )
 
@@ -124,7 +124,6 @@ class EarlyFusionCnnTransformer(nn.Module):
         non_visual_sensors,
         goals,
         time_ids, # (B, T)
-        last_agent_pose,
         text_features=None,
     ):
         # visual_feats: (B, T, 512)
@@ -147,11 +146,11 @@ class EarlyFusionCnnTransformer(nn.Module):
         time_enc = self.time_encoder(time_ids)
         visual_feats = visual_feats + time_enc
 
-        visual_feats = visual_feats + self.pose_embedding(last_agent_pose)
-
         return visual_feats, text_feats
 
-    def decode_and_get_logits(self, embedded_features, implicit_memory, padding_mask=None):
+    def decode_and_get_logits(self, embedded_features, implicit_memory, pos_embedding, padding_mask=None):
+        embedded_features = embedded_features + pos_embedding
+
         batch_size = embedded_features.shape[0]
         memory_size = implicit_memory.shape[1]
 
@@ -179,7 +178,6 @@ class EarlyFusionCnnTransformer(nn.Module):
         encoder_output = self.encoder(
             src=torch.cat((implicit_memory, embedded_features), dim=1),
             src_key_padding_mask=padding_mask,
-            
         )
 
         logits = dict(actions_logits=self.action_classifier(encoder_output[:, -1:, :])) # (B, 1, num_actions)
@@ -202,7 +200,6 @@ class EarlyFusionCnnTransformer(nn.Module):
             non_visual_sensors,
             goals,
             time_ids,
-            batch["last_agent_pose"],
         )
 
         batch_size, T, _ = embedded_features.shape
@@ -212,9 +209,12 @@ class EarlyFusionCnnTransformer(nn.Module):
         implicit_memory, implicit_memory_pos = self.imap_embedding(batch_size)
 
         for t in range(T):
+            embedded_features_pos = self.pos_embedding(batch["last_agent_pose"][:, t : t + 1, 0 : 2]) + self.pos_embedding(batch["last_agent_pose"][:, t : t + 1, 2 : 4]) 
+
             logits, implicit_memory = self.decode_and_get_logits(
                 embedded_features=embedded_features[:, t : t + 1, :],
                 implicit_memory=implicit_memory, 
+                pos_embedding=torch.cat(implicit_memory_pos, embedded_features_pos),
                 padding_mask=padding_mask[:, t : t + 1],
             )
 
