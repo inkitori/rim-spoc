@@ -2,6 +2,8 @@ import random
 from dataclasses import dataclass, field
 from typing import Tuple, List
 
+import numpy as np
+
 import torch
 import torchvision
 import torchvision.transforms as T
@@ -185,6 +187,17 @@ class Preprocessor:
             return pad_sequence(time_ids, batch_first=True, padding_value=-1).to(self.device)
 
         return time_ids
+    
+    def process_agent_pose(self, batch):
+        agent_pose = [
+            torch.tensor(sample["last_agent_pose"][: self.cfg.max_steps]).long()
+            for sample in batch
+        ]
+        if self.cfg.pad:
+            return pad_sequence(agent_pose, batch_first=True, padding_value=-1).to(
+                self.device
+            )
+        return agent_pose
 
     def process_objinhand(self, batch):
         obj_in_hand = [
@@ -232,6 +245,8 @@ class Preprocessor:
         for sensor in batch_keys:
             if is_a_visual_sensor(sensor):
                 output[sensor] = self.process_frames(batch, sensor_key=sensor)
+            elif sensor == "last_agent_pose":
+                output[sensor] = self.process_agent_pose(batch)
             elif sensor == "an_object_is_in_hand":
                 output[sensor] = self.process_objinhand(batch)
             elif sensor == "relative_arm_location_metadata":
