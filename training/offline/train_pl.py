@@ -136,8 +136,10 @@ class LitModel(pl.LightningModule):
 
             ForkedPdb().set_trace()
 
+
         proc_batch = self.preproc.process(batch)
-        outputs = self.model(proc_batch)
+
+        outputs = self.model(proc_batch)    
         return outputs, proc_batch
 
     def training_step(self, batch, batch_idx):
@@ -439,6 +441,7 @@ def launch_training(args):
         max_epochs=args.max_epochs,
         logger=logger,
         precision=args.precision,
+        num_sanity_val_steps=0,
     )
 
     resume_ckpt_path = None

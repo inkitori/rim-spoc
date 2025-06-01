@@ -2,6 +2,8 @@ import random
 from dataclasses import dataclass, field
 from typing import Tuple, List
 
+import numpy as np
+
 import torch
 import torchvision
 import torchvision.transforms as T
@@ -186,6 +188,27 @@ class Preprocessor:
 
         return time_ids
 
+    def process_agent_pose(self, batch):
+        agent_pose = []
+        for i, sample in enumerate(batch):
+            pose = sample["last_agent_pose"][: self.cfg.max_steps]
+            tensor_pose = torch.tensor(pose)
+            if tensor_pose.shape[-1] != 4:
+                raise ValueError(f"Sample {i} has invalid shape: {tensor_pose.shape}, expected (*, 4)")
+            agent_pose.append(tensor_pose)
+
+        '''
+        agent_pose = [
+            torch.tensor(sample["last_agent_pose"][: self.cfg.max_steps]).long()
+            for sample in batch
+        ]
+        '''
+        if self.cfg.pad:
+            return pad_sequence(agent_pose, batch_first=True, padding_value=-1).to(
+                self.device
+            )
+        return agent_pose
+
     def process_objinhand(self, batch):
         obj_in_hand = [
             torch.tensor(sample["an_object_is_in_hand"][: self.cfg.max_steps]).long()
@@ -229,9 +252,13 @@ class Preprocessor:
         batch_keys = list(batch[0].keys())
         output = dict()
 
+        print(batch_keys)
+
         for sensor in batch_keys:
             if is_a_visual_sensor(sensor):
                 output[sensor] = self.process_frames(batch, sensor_key=sensor)
+            elif sensor == "last_agent_pose":
+                output[sensor] = self.process_agent_pose(batch)
             elif sensor == "an_object_is_in_hand":
                 output[sensor] = self.process_objinhand(batch)
             elif sensor == "relative_arm_location_metadata":

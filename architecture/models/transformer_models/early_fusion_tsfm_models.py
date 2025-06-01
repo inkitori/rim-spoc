@@ -95,6 +95,17 @@ class EarlyFusionCnnTransformer(nn.Module):
     
         # (B, imap_size^2, 512)
         self.imap_embedding = ImapEmbedding(self.cfg.imap_embedding)
+        '''
+        self.compass_embedding = nn.Sequential(
+            nn.Linear(2, 512),
+            nn.LayerNorm(512),
+        )
+
+        self.gps_embedding = nn.Sequential(
+            nn.Linear(2, 512),
+            nn.LayerNorm(512),
+        )
+        '''
 
     
 
@@ -121,6 +132,7 @@ class EarlyFusionCnnTransformer(nn.Module):
         non_visual_sensors,
         goals,
         time_ids, # (B, T)
+        #agent_pose,
         text_features=None,
     ):
         # visual_feats: (B, T, 512)
@@ -142,6 +154,9 @@ class EarlyFusionCnnTransformer(nn.Module):
 
         time_enc = self.time_encoder(time_ids)
         visual_feats = visual_feats + time_enc
+
+        #pose_embedding = self.gps_embedding(agent_pose[:,:,0:2]) + self.compass_embedding(agent_pose[:,:,2:4])
+        #visual_feats = visual_feats + pose_embedding
 
         return visual_feats, text_feats
 
@@ -184,6 +199,7 @@ class EarlyFusionCnnTransformer(nn.Module):
         goals = batch["goals"]
         time_ids = batch["time_ids"]
         padding_mask = batch["padding_mask"]
+        #agent_pose = batch["last_agent_pose"]
 
         visual_sensors = {key: obs for (key, obs) in batch.items() if is_a_visual_sensor(key)}
         non_visual_sensors = {
@@ -195,6 +211,7 @@ class EarlyFusionCnnTransformer(nn.Module):
             non_visual_sensors,
             goals,
             time_ids,
+            #agent_pose,
         )
 
         batch_size, T, _ = embedded_features.shape

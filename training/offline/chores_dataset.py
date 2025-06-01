@@ -97,6 +97,7 @@ class ChoresDataReader:
             grp = f[sub_house_id]
             sensor_keys = [
                 "last_action_str",
+                "last_agent_pose",
                 "initial_agent_location",
                 "templated_task_spec",
             ] + additional_sensor_keys
@@ -105,9 +106,18 @@ class ChoresDataReader:
             task_dict = convert_byte_to_string(grp["templated_task_spec"][0], None)
             task_dict = json_templated_spec_to_dict(task_dict)
 
+
             for k in sensor_keys:
                 if k == "initial_agent_location":
                     sensors[k] = grp["last_agent_location"][0]
+                elif k == "last_agent_pose":
+                    pose_3d = np.array(grp["last_agent_location"] - grp["last_agent_location"][0])
+                    sensors[k] = np.array([
+                        pose_3d[:,0], 
+                        pose_3d[:,2], 
+                        np.sin(pose_3d[:,4]), 
+                        np.cos(pose_3d[:,4])
+                    ]).T
                 elif k == "last_action_str":
                     sensors[k] = [convert_byte_to_string(row, None) for row in grp[k]]
                 elif k == "last_actions":
@@ -391,6 +401,7 @@ class ChoresDataset(Dataset):
             goal=json_templated_to_NL_spec(sensors["templated_task_spec"]),  # [0]),
             time_ids=time_ids,
             initial_agent_location=sensors["initial_agent_location"],
+            last_agent_pose=sensors["last_agent_pose"],
             templated_task_type=sensors["templated_task_spec"],
         )
 
