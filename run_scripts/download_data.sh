@@ -1,8 +1,9 @@
 #!/bin/bash
-#SBATCH --partition=ckpt
-#SBATCH --account=cse
+#SBATCH --partition=gpu-2080ti
+#SBATCH --account=ark
 #SBATCH --job-name=download_data
-#SBATCH --output=/gscratch/ark/anjo0/rim-spoc/run_scripts/download_data.out
+#SBATCH --output=/gscratch/ark/anjo0/rim-spoc/run_scripts/download_data/%x_%j.out
+#SBATCH --time=23:59:00
 
 CONDA_BASE=$(conda info --base) # This is a good way to get it if conda is in PATH
 

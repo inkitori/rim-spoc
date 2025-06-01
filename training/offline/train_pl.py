@@ -462,6 +462,7 @@ def launch_training(args):
             'Training from scratch. Set "--resume" (along with "--run_id" and "--step") to resume from a checkpoint.'
         )
 
+    print("Running with positional embeddings at each step.")
     trainer.fit(
         lit_model,
         data_loaders["train"],

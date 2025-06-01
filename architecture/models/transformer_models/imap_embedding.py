@@ -52,7 +52,6 @@ class ImapEmbedding(nn.Module):
         # create embedding to capture spatial relationship between position within the imap using equation 1
         pos_embeds = self.imap_pos_layer(self.imap_pos_fts.to(device))
 
-        embeds = embeds + pos_embeds
         embeds = self.ft_fusion_layer(embeds)
 
         # (imap_size**2, hidden_size) -> (batch_size, imap_size**2, hidden_size)

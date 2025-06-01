@@ -145,7 +145,7 @@ class EarlyFusionCnnTransformer(nn.Module):
 
         return visual_feats, text_feats
 
-    def decode_and_get_logits(self, embedded_features, implicit_memory, padding_mask=None):
+    def decode_and_get_logits(self, embedded_features, implicit_memory, implicit_memory_pos, padding_mask=None):
         batch_size = embedded_features.shape[0]
         memory_size = implicit_memory.shape[1]
 
@@ -171,7 +171,7 @@ class EarlyFusionCnnTransformer(nn.Module):
             ), dim=1)
 
         encoder_output = self.encoder(
-            src=torch.cat((implicit_memory, embedded_features), dim=1),
+            src=torch.cat((implicit_memory+implicit_memory_pos, embedded_features), dim=1),
             src_key_padding_mask=padding_mask,
         )
 
@@ -208,6 +208,7 @@ class EarlyFusionCnnTransformer(nn.Module):
             logits, implicit_memory = self.decode_and_get_logits(
                 embedded_features=embedded_features[:, t : t + 1, :],
                 implicit_memory=implicit_memory, 
+                implicit_memory_pos=implicit_memory_pos,
                 padding_mask=padding_mask[:, t : t + 1],
             )
 
@@ -474,7 +475,7 @@ class EarlyFusionCnnTransformerAgent(AbstractAgent):
             )
         
         if self.curr_t == 0:
-            self.cache['implicit_memory'], _ = self.model.imap_embedding(embedded_features.shape[0])
+            self.cache['implicit_memory'], self.cache['implicit_memory_pos'] = self.model.imap_embedding(embedded_features.shape[0])
 
         decoder_input = self.cache["embedded_features"]
         if self.curr_t >= self.max_seq_len:
@@ -483,6 +484,7 @@ class EarlyFusionCnnTransformerAgent(AbstractAgent):
         logits, self.cache['implicit_memory'] = self.model.decode_and_get_logits(
             embedded_features=decoder_input[:, -1 :, :], 
             implicit_memory=self.cache['implicit_memory'], 
+            implicit_memory_pos=self.cache['implicit_memory_pos'],
         )
 
         curr_logits = logits["actions_logits"][0, -1]

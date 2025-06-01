@@ -1,13 +1,13 @@
 #!/bin/bash
-#SBATCH --partition=gpu-l40s
+#SBATCH --partition=gpu-a100
 #SBATCH --account=cse
-#SBATCH --mem-per-gpu=64G
+#SBATCH --mem-per-gpu=32G
 #SBATCH --cpus-per-gpu=1
 #SBATCH --nodes=1
 #SBATCH --gres=gpu:2
 #SBATCH --time=23:59:00
 #SBATCH --job-name=train
-#SBATCH --output=/gscratch/ark/anjo0/rim-spoc/run_scripts/train.out
+#SBATCH --output=/gscratch/ark/anjo0/rim-spoc/run_scripts/train/%x_%j.out
 
 CONDA_BASE=$(conda info --base) # This is a good way to get it if conda is in PATH
 
@@ -26,8 +26,12 @@ fi
 
 cd /gscratch/ark/anjo0/rim-spoc
 
-git checkout primary_task
+# git checkout primary_task
 
 conda activate spoc
 
-python -m training.offline.train_pl --dataset_version PickupType --wandb_project_name dl_project --wandb_entity_name 493_spoc_rim --data_dir data/datasets/fifteen --input_sensors raw_navigation_camera raw_manipulation_camera last_actions an_object_is_in_hand --precision 16-mixed --lr 0.00002 --model_version siglip_3 --per_gpu_batch 16 --output_dir data/results --model EarlyFusionCnnTransformer --num_nodes 1 
+python -m training.offline.train_pl --dataset_version RoomNav \
+ --wandb_project_name dl_project --wandb_entity_name 493_spoc_rim --data_dir data/datasets/fifteen \
+ --input_sensors raw_navigation_camera raw_manipulation_camera last_actions an_object_is_in_hand \
+ --precision 16-mixed --lr 0.00002 --model_version siglip_3 --per_gpu_batch 16 \
+ --output_dir data/results --model EarlyFusionCnnTransformer --num_nodes 1 
