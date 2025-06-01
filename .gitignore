@@ -101,3 +101,5 @@ utils/beaker
 data
 train.out
 eval.out
+eval_*.out
+train_*.out
