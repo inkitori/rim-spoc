@@ -228,7 +228,6 @@ class Preprocessor:
 
         batch_keys = list(batch[0].keys())
         output = dict()
-        print(f"Available sensors for this dataset: {batch_keys}")
 
         for sensor in batch_keys:
             if is_a_visual_sensor(sensor):

@@ -98,7 +98,7 @@ class EarlyFusionCnnTransformer(nn.Module):
     
         ## Current Room Recognition Auxiliary Task
         self.room_curr_classifier = nn.Linear(self.cfg.encoder.d_model, 1)
-        self.room_curr_bce_loss = nn.BCEWithLogitsLoss(pos_weight=torch.tensor([1.0])) # make sure pos_weight is set to actual ratio
+        self.room_curr_bce_loss = nn.BCEWithLogitsLoss(pos_weight=torch.tensor([24.93])) # RoomNav Configuration
     
 
     def mock_batch(self):
@@ -119,7 +119,13 @@ class EarlyFusionCnnTransformer(nn.Module):
         return self.ce_loss(logits.reshape(-1, C), actions.reshape(-1))
     
     def compute_curr_room_loss(self, logits, room_current_seen):
-        return self.room_curr_bce_loss(logits.squeeze(-1), room_current_seen.float())
+        logit = logits.squeeze(-1)
+        y = room_current_seen.float()
+        valid = (y == 0.0) | (y == 1.0)
+
+        logit_valid = logit[valid]
+        y_valid = y[valid]
+        return self.room_curr_bce_loss(logit_valid, y_valid)
 
     def get_input_embedding_per_timestep(
         self,
