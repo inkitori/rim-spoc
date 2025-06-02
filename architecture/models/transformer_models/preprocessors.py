@@ -190,7 +190,7 @@ class Preprocessor:
 
     def process_agent_pose(self, batch):
         agent_pose = [
-            torch.tensor(sample["last_agent_pose"][: self.cfg.max_steps]).long()
+            torch.tensor(sample["last_agent_pose"][: self.cfg.max_steps]).float()
             for sample in batch
         ]
 
@@ -290,6 +290,16 @@ class Preprocessor:
             output["padding_mask"] = self.create_padding_mask(
                 output["lengths"], output[key_to_look_at].shape[1]
             )
+
+        # inferred pose and rgb vals for visual feature predictionAdd commentMore actions
+        max_future_step_size = 20
+        max_steps = output['last_agent_pose'].size(1)
+        infer_time_ids = np.array([
+            np.random.randint(0, min(max_steps, t+max_future_step_size)) \
+                for t in range(0, max_steps)
+        ])
+        output['infer_pose'] = output['last_agent_pose'][:, infer_time_ids, :]
+        output['infer_time_ids'] = infer_time_ids
 
         return output
 

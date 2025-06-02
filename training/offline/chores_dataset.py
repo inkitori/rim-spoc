@@ -401,7 +401,7 @@ class ChoresDataset(Dataset):
             goal=json_templated_to_NL_spec(sensors["templated_task_spec"]),  # [0]),
             time_ids=time_ids,
             initial_agent_location=sensors["initial_agent_location"],
-            last_agent_pose=sensors["last_agent_pose"],
+            last_agent_pose=sensors["last_agent_pose"][select_indices],
             templated_task_type=sensors["templated_task_spec"],
         )
 
