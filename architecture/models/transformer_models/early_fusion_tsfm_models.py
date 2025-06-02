@@ -97,8 +97,12 @@ class EarlyFusionCnnTransformer(nn.Module):
         self.imap_embedding = ImapEmbedding(self.cfg.imap_embedding)
     
         ## Current Room Recognition Auxiliary Task
-        self.room_curr_classifier = nn.Linear(self.cfg.encoder.d_model, 1)
-        self.room_curr_bce_loss = nn.BCEWithLogitsLoss(pos_weight=torch.tensor([24.93])) # RoomNav Configuration
+        #self.room_curr_classifier = nn.Linear(self.cfg.encoder.d_model, 1)
+        #self.room_curr_bce_loss = nn.BCEWithLogitsLoss(pos_weight=torch.tensor([24.93])) # RoomNav Configuration
+
+        ## Rooms Seen Auxiliary Task
+        self.rooms_seen_classifier = nn.Linear(self.cfg.encoder.d_model, 19)
+        self.rooms_seen_ce_loss = nn.CrossEntropyLoss(ignore_index=19)
     
 
     def mock_batch(self):
@@ -126,6 +130,12 @@ class EarlyFusionCnnTransformer(nn.Module):
         logit_valid = logit[valid]
         y_valid = y[valid]
         return self.room_curr_bce_loss(logit_valid, y_valid)
+    
+    def compute_rooms_seen_loss(self, logits, rooms_seen):
+        B, T, C = logits.shape
+        logit_flat = logits.view(B * T, C)
+        label_flat = rooms_seen.reshape(-1)
+        return self.rooms_seen_ce_loss(logit_flat, label_flat)
 
     def get_input_embedding_per_timestep(
         self,
@@ -191,16 +201,18 @@ class EarlyFusionCnnTransformer(nn.Module):
         next_memory = encoder_output[:, :-1, :]  # exclude the last token
 
 
-        ## Current Room Recognition Auxiliary Task
-        room_curr_pred = self.room_curr_classifier(encoder_output[:, -1:, :])
-
-        return logits, next_memory, room_curr_pred
+        ## Auxiliary Task
+        #room_curr_pred = self.room_curr_classifier(encoder_output[:, -1:, :])
+        rooms_seen_pred = self.rooms_seen_classifier(encoder_output[:, -1:, :])
+        
+        return logits, next_memory, rooms_seen_pred
 
     def forward(self, batch):
         goals = batch["goals"]
         time_ids = batch["time_ids"]
         padding_mask = batch["padding_mask"]
-        room_current_seen = batch["room_current_seen"]
+        #room_current_seen = batch["room_current_seen"]
+        rooms_seen = batch["rooms_seen"]
 
         visual_sensors = {key: obs for (key, obs) in batch.items() if is_a_visual_sensor(key)}
         non_visual_sensors = {
@@ -217,13 +229,14 @@ class EarlyFusionCnnTransformer(nn.Module):
         batch_size, T, _ = embedded_features.shape
 
         actions_logits = torch.empty((batch_size, 0, self.cfg.num_actions), device=embedded_features.device)
-        room_curr_seen_logits = torch.empty((batch_size, 0, 1), device=embedded_features.device)
+        #room_curr_seen_logits = torch.empty((batch_size, 0, 1), device=embedded_features.device)
+        rooms_seen_logits = torch.empty((batch_size, 0, 19), device=embedded_features.device)
         
         # don't think we need memory_pos because nn.Transformer already has positional encoding
         implicit_memory, implicit_memory_pos = self.imap_embedding(batch_size)
 
         for t in range(T):
-            logits, implicit_memory, room_curr_pred = self.decode_and_get_logits(
+            logits, implicit_memory, rooms_seen_pred = self.decode_and_get_logits(
                 embedded_features=embedded_features[:, t : t + 1, :],
                 implicit_memory=implicit_memory, 
                 implicit_memory_pos=implicit_memory_pos,
@@ -231,18 +244,21 @@ class EarlyFusionCnnTransformer(nn.Module):
             )
 
             actions_logits = torch.cat((actions_logits, logits['actions_logits']), dim=1)
-            room_curr_seen_logits = torch.cat((room_curr_seen_logits, room_curr_pred), dim=1)
+            #room_curr_seen_logits = torch.cat((room_curr_seen_logits, room_curr_pred), dim=1)
+            rooms_seen_logits = torch.cat((rooms_seen_logits, rooms_seen_pred), dim=1)
 
         logits = dict(actions_logits=actions_logits)
         outputs = dict(**logits)
 
         if self.cfg.action_loss:
             action_loss = self.compute_loss(logits["actions_logits"], batch["actions"])
-            room_curr_seen_loss = self.compute_curr_room_loss(room_curr_seen_logits, room_current_seen)
+            #room_curr_seen_loss = self.compute_curr_room_loss(room_curr_seen_logits, room_current_seen)
+            rooms_seen_loss = self.compute_rooms_seen_loss(rooms_seen_logits, rooms_seen)
 
             outputs["actions_loss"] = action_loss
-            outputs["room_curr_seen_loss"] = room_curr_seen_loss
-            outputs["loss"] = action_loss + room_curr_seen_loss
+            #outputs["room_curr_seen_loss"] = room_curr_seen_loss
+            outputs["rooms_seen_loss"] = rooms_seen_loss
+            outputs["loss"] = action_loss + rooms_seen_loss
 
         return outputs
 
